@@ -1,50 +1,72 @@
+// hooks/useYearInPixels.ts
 import { useState, useEffect } from "react";
 import { Activity, DayRecord } from "@/types";
 
-const STORAGE_ACTIVITIES = "yip-activities";
-const STORAGE_RECORDS = "yip-records";
-
-const defaultActivities: Activity[] = [
-  { id: "1", name: "Estudar", color: "#3b82f6" },
-  { id: "2", name: "Treinar", color: "#22c55e" },
-  { id: "3", name: "Meditar", color: "#a855f7" },
-];
+// Importações dos nossos arquivos de ação
+import { getRecordsFromDB, saveDayRecordToDB } from "@/actions/records";
+import {
+  getActivitiesFromDB,
+  saveActivityToDB,
+  updateActivityInDB,
+  deleteActivityFromDB,
+} from "@/actions/activities";
 
 export function useYearInPixels() {
-  const [activities, setActivities] = useState<Activity[]>(() => {
-    const saved = localStorage.getItem(STORAGE_ACTIVITIES);
-    return saved ? JSON.parse(saved) : defaultActivities;
-  });
+  // 1. Estados iniciais (agora começam vazios, pois a fonte da verdade é o banco)
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [records, setRecords] = useState<DayRecord>({});
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [records, setRecords] = useState<DayRecord>(() => {
-    const saved = localStorage.getItem(STORAGE_RECORDS);
-    return saved ? JSON.parse(saved) : {};
-  });
-
+  // 2. Efeito de Busca: Carrega atividades e records juntos
   useEffect(() => {
-    localStorage.setItem(STORAGE_ACTIVITIES, JSON.stringify(activities));
-  }, [activities]);
+    async function fetchAllData() {
+      try {
+        // Promise.all executa as duas buscas simultaneamente para ganhar tempo
+        const [dbRecords, dbActivities] = await Promise.all([
+          getRecordsFromDB(),
+          getActivitiesFromDB(),
+        ]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_RECORDS, JSON.stringify(records));
-  }, [records]);
+        setRecords(dbRecords);
+        setActivities(dbActivities);
+      } catch (error) {
+        console.error("Erro ao buscar dados do banco:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
 
-  const addActivity = (name: string, color: string) => {
-    setActivities((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), name, color },
-    ]);
+    fetchAllData();
+  }, []);
+
+  // 3. Adicionar Atividade (Interface Otimista + Salvar no Banco)
+  const addActivity = async (name: string, color: string) => {
+    const newId = crypto.randomUUID();
+
+    // Atualiza a tela primeiro
+    setActivities((prev) => [...prev, { id: newId, name, color }]);
+
+    // Salva no banco em segundo plano
+    await saveActivityToDB(newId, name, color);
   };
 
-  const updateActivity = (id: string, name: string, color: string) => {
+  // 4. Atualizar Atividade
+  const updateActivity = async (id: string, name: string, color: string) => {
+    // Atualiza a tela primeiro
     setActivities((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, name, color } : a))
+      prev.map((a) => (a.id === id ? { ...a, name, color } : a)),
     );
+
+    // Salva no banco em segundo plano
+    await updateActivityInDB(id, name, color);
   };
 
-  const deleteActivity = (id: string) => {
+  // 5. Deletar Atividade
+  const deleteActivity = async (id: string) => {
+    // A. Remove da lista de atividades na tela
     setActivities((prev) => prev.filter((a) => a.id !== id));
-    // Remove from records too
+
+    // B. Remove os registros dessa atividade nos dias marcados na tela
     setRecords((prev) => {
       const next = { ...prev };
       for (const key of Object.keys(next)) {
@@ -53,26 +75,34 @@ export function useYearInPixels() {
       }
       return next;
     });
+
+    // C. Deleta de fato no banco de dados
+    await deleteActivityFromDB(id);
   };
 
-  const toggleDayActivity = (dayKey: string, activityId: string) => {
+  // 6. Atualizar os Dias
+  const toggleDayActivity = async (dayKey: string, activityId: string) => {
+    const current = records[dayKey] || [];
+    const has = current.includes(activityId);
+    const updated = has
+      ? current.filter((id) => id !== activityId)
+      : [...current, activityId];
+
     setRecords((prev) => {
-      const current = prev[dayKey] || [];
-      const has = current.includes(activityId);
-      const updated = has
-        ? current.filter((id) => id !== activityId)
-        : [...current, activityId];
       if (updated.length === 0) {
         const { [dayKey]: _, ...rest } = prev;
         return rest;
       }
       return { ...prev, [dayKey]: updated };
     });
+
+    await saveDayRecordToDB(dayKey, updated);
   };
 
   return {
     activities,
     records,
+    isLoading,
     addActivity,
     updateActivity,
     deleteActivity,
