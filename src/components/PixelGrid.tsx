@@ -10,11 +10,26 @@ interface Props {
 }
 
 const MONTH_NAMES = [
-  "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
-  "Jul", "Ago", "Set", "Out", "Nov", "Dez",
+  "Jan",
+  "Fev",
+  "Mar",
+  "Abr",
+  "Mai",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Set",
+  "Out",
+  "Nov",
+  "Dez",
 ];
 
-export default function PixelGrid({ year, activities, records, onDayClick }: Props) {
+export default function PixelGrid({
+  year,
+  activities,
+  records,
+  onDayClick,
+}: Props) {
   const months = useMemo(() => {
     const result: { month: number; days: { date: Date; key: string }[] }[] = [];
     for (let m = 0; m < 12; m++) {
@@ -41,20 +56,28 @@ export default function PixelGrid({ year, activities, records, onDayClick }: Pro
             {MONTH_NAMES[month]}
           </h3>
           <div className="grid grid-cols-7 gap-[2px]">
-            {days.map(({ key }) => {
+            {/* Passo 1: Extraímos 'date' junto com 'key' no map */}
+            {days.map(({ key, date }) => {
               const dayActivities = (records[key] || [])
                 .map((id) => activities.find((a) => a.id === id))
                 .filter(Boolean) as Activity[];
               const bg = getDayBackground(dayActivities);
               const isToday = key === todayKey;
+
               return (
                 <button
                   key={key}
                   onClick={() => onDayClick(key)}
-                  className={`pixel-cell ${isToday ? "ring-1 ring-foreground/40" : ""}`}
+                  // Passo 2: Adicionamos flexbox para centralizar o texto dentro do botão
+                  className={`pixel-cell flex items-center justify-center ${isToday ? "ring-1 ring-foreground/40" : ""}`}
                   style={{ background: bg }}
                   title={key}
-                />
+                >
+                  {/* Passo 3: Criamos um span com o dia do mês e estilo discreto */}
+                  <span className="text-[9px] opacity-20 hover:opacity-100 transition-opacity pointer-events-none">
+                    {date.getDate()}
+                  </span>
+                </button>
               );
             })}
           </div>
